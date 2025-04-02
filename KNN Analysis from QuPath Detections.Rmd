@@ -1,0 +1,327 @@
+##### *K-Nearest Neighbor and Distance Analyses from QuPath detection output*
+
+Recommend customizing labels/identifiers first
+
+Ctrl-F: to replace with
+
+* *Sample_1,...etc:* label with your sample identifiers
+* *single_class_1,...etc:* label with your sample identifiers
+* *Class1,...etc:* replace with specific classes of interest
+* *knn_df_1,...etc:* label with your sample identifiers
+* *Group1, Group2:* replace with your group labels for samples
+* Double-check all file names
+
+```{r eval=FALSE}
+
+##Load requisite libraries
+library(readxl)
+library(FNN)
+library(ggplot2)
+library(dplyr)
+library(ggforce)
+library(scales)
+library(tibble)
+library(tidyr)
+library(RColorBrewer)
+
+## Set working folder for input/output
+
+setwd('...')
+```
+
+
+Input file must have:
+| Class | x | y | Sample_ID | columns for
+**ALL CELL CENTROIDS** (including the 'unclassified')
+ 
+```{r eval=FALSE}
+
+centroids <- read_excel("Sample1_Class Centroids.xlsx", sheet = 1) %>%
+  mutate(x = as.numeric(x), y = as.numeric(y), Class = as.factor(Class))
+```
+
+
+###### *For Cell-Center Distances:*
+
+* If not running this analysis, skip this chunk
+
+```{r eval=FALSE}
+
+centroids_center <- centroids %>%
+  mutate(x = as.numeric(x), y = as.numeric(y), Class = as.factor(Class))
+target_class <- "Class1"
+
+class_points <- centroids_center %>%
+  filter(Class == target_class)
+
+sample_centers <- centroids_center %>%
+  group_by(Sample_ID) %>%
+  summarise(Center_X = mean(x), Center_Y = mean(y), .groups = "drop")
+
+single_class_1 <- class_points %>%
+  left_join(sample_centers, by = "Sample_ID") %>%
+  mutate(Distance = sqrt((x - Center_X)^2 + (y - Center_Y)^2))
+
+#Run for each sample and combine data frames:
+all_single_distance <- bind_rows(single_class_1, single_class_2, single_class_3...) %>%
+  mutate(Group = case_when(
+    Sample_ID %in% c("Sample1", "Sample3", "Sample5") ~ "Group1",
+    Sample_ID %in% c("Sample2", "Sample4", "Sample6") ~ "Group2",
+    TRUE ~ "Other"  
+  ))
+write.csv(all_single_distance, "single_class_distances.csv", row.names = FALSE)
+
+mean_distance <- all_single_distance %>%
+  group_by(Sample_ID) %>%
+  summarise(Mean_Distance = mean(Distance)) %>%
+  column_to_rownames("Sample_ID")
+```
+
+
+###### *KNN Analysis:*
+
+
+```{r eval=FALSE}
+
+# Define the classes to keep
+selected_classes <- c("Class1", "Class2", 'Class3', 'Class4', 'Class5', "Class6") 
+centroids <- centroids %>% filter(Class %in% selected_classes)
+
+
+# Sample subset if dataset is >5000 to avoid overload
+k <- min(floor(sqrt(nrow(centroids))), 10)
+if (nrow(centroids) > 5000) {
+  centroids <- centroids[sample(1:nrow(centroids), 5000), ]
+}
+
+# Compute K-NN using KD-Tree and store in 'edges'
+knn_result <- get.knn(centroids[, c("x", "y")], k = k, algorithm = "kd_tree")
+
+edges <- data.frame()
+for (i in 1:nrow(centroids)) {
+  for (j in 1:k) {
+    neighbor_index <- knn_result$nn.index[i, j]
+    edges <- rbind(edges, data.frame(
+      x1 = centroids$x[i], y1 = centroids$y[i],
+      x2 = centroids$x[neighbor_index], y2 = centroids$y[neighbor_index]
+    ))
+  }
+}
+
+
+##### Dot plot of Classes and Neighbors
+
+# Define fixed colors for specific classes
+fixed_colors <- c("Class1"= '#FBBCC2', "Class2"= '#C7E2F0', 'Class3'= '#FFEBAD', 
+                  'Class4' = '#C0D9BE', 'Class5' = '#C0A0C1', "Class6" = '#B1B8E6' )
+
+
+ggplot() +
+  geom_curve(data = edges, aes(x = x1, y = y1, xend = x2, yend = y2), 
+             curvature = 0.2, alpha = 0.3, color = "gray") + 
+  
+  geom_point(data = centroids, aes(x, y, color = Class), size = 3) +
+  
+  scale_color_manual(values = fixed_colors) +  
+  
+  labs(title = paste("K-Nearest Neighbors (KD-Tree, k =", k, ")"), 
+       x = "X Coordinate", y = "Y Coordinate") +
+  theme_minimal()
+
+
+knn_df_1 <- data.frame()
+
+# Loop through each centroid and save its k-nearest neighbors
+for (i in 1:nrow(centroids)) {
+  for (j in 1:k) {
+    neighbor_index <- knn_result$nn.index[i, j]
+    
+    
+    knn_df_1 <- rbind(knn_df_1, data.frame(
+      Sample_ID = centroids$Sample_ID[i],                
+      Point_ID = i,                                       
+      Point_X = centroids$x[i],                          
+      Point_Y = centroids$y[i],                          
+      Point_Class = centroids$Class[i],                  
+      Point_Sample_ID = centroids$Sample_ID[i],
+      
+      Neighbor_ID = neighbor_index,                      
+      Neighbor_X = centroids$x[neighbor_index],          
+      Neighbor_Y = centroids$y[neighbor_index],          
+      Neighbor_Class = centroids$Class[neighbor_index],  
+      Neighbor_Sample_ID = centroids$Sample_ID[neighbor_index],  
+      
+      Distance = neighbor_dist
+    ))
+  }
+}
+
+write.csv(knn_df_1, "KNN_Clusters_1.csv", row.names = FALSE)
+```
+
+
+###### *Count occurrences of Class-Neighbor pairs per* *INDIVIDUAL SAMPLE*
+
+* If merged group heatmaps wanted, skip to next chunk
+
+```{r eval=FALSE}
+
+class_neighbor_counts <- knn_df_1 %>%
+  group_by(Point_Class, Neighbor_Class) %>%
+  summarise(Frequency = n(), .groups = "drop")
+
+class_matrix <- class_neighbor_counts %>%
+  tidyr::pivot_wider(names_from = Neighbor_Class, values_from = Frequency, values_fill = 0)
+
+# Generate indivual sample heatmap
+ggplot(class_neighbor_counts, aes(x = Point_Class, y = Neighbor_Class, fill = Frequency)) +
+  geom_tile(color = "white") +  
+  
+  scale_fill_gradientn(
+    colors = c("blue", 'white', "red"),  
+    trans = "log1p",  
+    labels = scales::comma  
+  ) +
+  
+  labs(
+    title = "Class Co-occurrence Heatmap (Log Scale)",
+    x = "Class",
+    y = "Nearest Neighbor",
+    fill = "Log(Frequency)"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1) 
+  )
+```
+
+
+###### *Count occurrences of Class-Neighbor pairs per* *GROUPS*
+
+* Each sample must have been labeled individually & stored/loaded in as data frame
+ 
+ 
+```{r eval=FALSE}
+
+all_KNN_df <- bind_rows(knn_df_1, knn_df_2, knn_df_3...) %>%
+  mutate(Group = case_when(
+    Sample_ID %in% c("Sample1", "Sample3", "Sample5") ~ "Group1",
+    Sample_ID %in% c("Sample2", "Sample4", "Sample6") ~ "Group2",
+    TRUE ~ "Other"  
+  ))
+write.csv(all_KNN_df, "all_KNN_combined.csv", row.names = FALSE)
+
+class_neighbor_freq <- all_KNN_df %>%
+  group_by(Group, Point_Class, Neighbor_Class) %>%
+  summarise(Mean_Frequency = mean(Frequency), .groups = "drop")
+
+heatmap_data_Group1 <- class_neighbor_freq %>% filter(Group == "Group1")
+ggplot(heatmap_data_Group1, aes(x = Point_Class, y = Neighbor_Class, fill = Mean_Frequency)) +
+  geom_tile(color = "white") +
+  
+  scale_fill_gradientn(
+    colors = c("blue", 'white', "red"),  
+    trans = "log1p",  
+    labels = scales::comma
+  ) +
+  
+  labs(
+    title = "Average Group1 Cell Interaction Frequencies (Log Scale)",
+    x = "Class",
+    y = "Nearest Neighbor",
+    fill = "Log(Frequency)"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  
+  )
+
+heatmap_data_Group2 <- class_neighbor_freq %>% filter(Group == "Group2")
+ggplot(heatmap_data_Group2, aes(x = Point_Class, y = Neighbor_Class, fill = Mean_Frequency)) +
+  geom_tile(color = "white") +  
+  
+  
+  scale_fill_gradientn(
+    colors = c("blue", 'white', "red"),  
+    trans = "log1p",  
+    labels = scales::comma  
+  ) +
+  
+  labs(
+    title = "Average Group2 Cell Interaction Frequencies (Log Scale)",
+    x = "Class",
+    y = "Nearest Neighbor",
+    fill = "Log(Frequency)"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1) 
+  )
+
+```
+ 
+
+##### *For Cell-Cell Distance Analyses:*
+
+* Swap in Sample_ID for Group if desired comparison between specific samples instead of grouped samples
+
+
+```{r eval=FALSE}
+
+# Cell-cell distances
+class_pair_distances <- data_frame()
+class_pair_distances <- all_KNN_df %>%
+  filter((Point_Class == "Class1" & Neighbor_Class == "Class2") |
+           (Point_Class == "Class2" & Neighbor_Class == "Class1"))
+class_pair_distances$Group <- factor(class_pair_distances$Point_Sample_ID, 
+                                     levels = c("Group1, Group2")) 
+
+write.csv(class_pair_distances, "Class1-Class2_distances.csv", row.names = FALSE)
+
+
+# Box & whisker plot of distances between cell classes between samples/groups
+ggplot(class_pair_distances, aes(x = Group, y = Distance)) +
+  geom_boxplot(aes(fill = Group)) +
+  theme_minimal() +
+  varwidth = TRUE +
+  labs(title = "KNN Distance Between Class1 and Class2 Across Groups",
+       y = "Distance", x = "Group")
+
+# Stats
+library(effectsize)
+comparison_df <- class_pair_distances %>%
+  filter(Group %in% c("Group1", "Group2"))
+stats <- wilcox.test(Distance ~ Group, data = comparison_df)
+options(digits = 10)
+stats$p.value
+effectsize::rank_biserial(Distance ~ Group, data = comparison_df)
+```
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
