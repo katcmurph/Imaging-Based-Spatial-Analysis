@@ -2,7 +2,7 @@
 
 Recommend customizing labels/identifiers first
 
-Ctrl-F: to replace with
+*Ctrl-F:* to replace with
 
 * *Sample_1,...etc:* label with your sample identifiers
 * *single_class_1,...etc:* label with your sample identifiers
@@ -11,7 +11,7 @@ Ctrl-F: to replace with
 * *Group1, Group2:* replace with your group labels for samples
 * Double-check all file names
 
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 ##Load requisite libraries
 library(readxl)
@@ -25,7 +25,6 @@ library(tidyr)
 library(RColorBrewer)
 
 ## Set working folder for input/output
-
 setwd('...')
 ```
 
@@ -34,7 +33,7 @@ Input file must have:
 | Class | x | y | Sample_ID | columns for
 **ALL CELL CENTROIDS** (including the 'unclassified')
  
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 centroids <- read_excel("Sample1_Class Centroids.xlsx", sheet = 1) %>%
   mutate(x = as.numeric(x), y = as.numeric(y), Class = as.factor(Class))
@@ -45,7 +44,7 @@ centroids <- read_excel("Sample1_Class Centroids.xlsx", sheet = 1) %>%
 
 * If not running this analysis, skip this chunk
 
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 centroids_center <- centroids %>%
   mutate(x = as.numeric(x), y = as.numeric(y), Class = as.factor(Class))
@@ -81,7 +80,7 @@ mean_distance <- all_single_distance %>%
 ###### *KNN Analysis:*
 
 
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 # Define the classes to keep
 selected_classes <- c("Class1", "Class2", 'Class3', 'Class4', 'Class5', "Class6") 
@@ -164,7 +163,7 @@ write.csv(knn_df_1, "KNN_Clusters_1.csv", row.names = FALSE)
 
 * If merged group heatmaps wanted, skip to next chunk
 
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 class_neighbor_counts <- knn_df_1 %>%
   group_by(Point_Class, Neighbor_Class) %>%
@@ -202,7 +201,7 @@ ggplot(class_neighbor_counts, aes(x = Point_Class, y = Neighbor_Class, fill = Fr
 * Each sample must have been labeled individually & stored/loaded in as data frame
  
  
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 all_KNN_df <- bind_rows(knn_df_1, knn_df_2, knn_df_3...) %>%
   mutate(Group = case_when(
@@ -269,7 +268,7 @@ ggplot(heatmap_data_Group2, aes(x = Point_Class, y = Neighbor_Class, fill = Mean
 * Swap in Sample_ID for Group if desired comparison between specific samples instead of grouped samples
 
 
-```{r eval=FALSE}
+```{r eval = FALSE}
 
 # Cell-cell distances
 class_pair_distances <- data_frame()
